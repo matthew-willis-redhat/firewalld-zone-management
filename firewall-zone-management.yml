@@ -1,0 +1,103 @@
+---
+- name: Firewall Zone Management
+  hosts: localhost
+  gather_facts: true
+  collections:
+    - ansible.posix
+    # - redhat.rhel_system_roles
+    - fedora.linux_system_roles
+
+  vars:
+    # Firewall Zone name
+    fw_zone: nfs-clients
+    # Firewall Zone IPSet
+    fw_zone_ipset: "{{ fw_zone }}_ipset"
+    # Firewall Zone Descriptions
+    fw_zone_desc: Set of IP addresses for NFS Clients access
+    fw_zone_desc_short: NFS Clients
+    # Firewall Zone services
+    fw_zone_services:
+      - nfs
+    # Read IPs from a file
+    fw_zone_ipset_add_ip_list: "{{ lookup('ansible.builtin.file','files/add_ip_list').splitlines() }}"
+    fw_zone_ipset_remove_ip_list: "{{ lookup('ansible.builtin.file','files/remove_ip_list').splitlines() }}"
+
+  tasks:
+    # Create IPSet for fw_zone
+    - name: "[INCLUDE_ROLE] Create IPSet | {{ fw_zone_ipset }}"
+      ansible.builtin.include_role:
+        name: fedora.linux_system_roles.firewall
+        apply: 
+          become: true
+      vars:
+        firewall:
+          - ipset: "{{ fw_zone_ipset }}"
+            ipset_type: "hash:ip"
+            short: "{{ fw_zone_desc_short }}"
+            description: "{{ fw_zone_desc }}"
+            state: present
+            permanent: true
+
+    # Add entries to IPSet for fw_zone
+    - name: "[INCLUDE_ROLE] Add IP Addresses to IPSet from list"
+      ansible.builtin.include_role:
+        name: fedora.linux_system_roles.firewall
+        apply: 
+          become: true
+      vars:
+        firewall:
+          - ipset: "{{ fw_zone_ipset }}"
+            ipset_entries: "{{ fw_zone_ipset_add_ip_list }}"
+            state: present
+            permanent: true
+    
+    # Remove entries from IPSet for fw_zone
+    - name: "[INCLUDE_ROLE] Remove IP Addresses to IPSet from list"
+      ansible.builtin.include_role:
+        name: fedora.linux_system_roles.firewall
+        apply: 
+          become: true
+      vars:
+        firewall:
+          - ipset: "{{ fw_zone_ipset }}"
+            ipset_entries: "{{ fw_zone_ipset_remove_ip_list }}"
+            state: absent
+            permanent: true
+    
+    # Update the fw_zone with the new parameters for the fw_zone
+    - name: "[INCLUDE_ROLE] Add or Update Firewalld Zone | {{ fw_zone }}"
+      ansible.builtin.include_role:
+        name: fedora.linux_system_roles.firewall
+        apply: 
+          become: true
+      vars:
+        firewall:
+          - zone: "{{ fw_zone }}"
+            state: present         
+          - source: "ipset:{{ fw_zone_ipset }}"          
+            zone: "{{ fw_zone }}"
+            service: "{{ fw_zone_services }}"
+            permanent: true
+            state: enabled
+
+    # Gather fw_zone information
+    - name: Gather Firewalld Zone Information
+      ansible.posix.firewalld_info:
+        zones: "{{ fw_zone }}"
+      register: fw_zone_info
+
+    # Gather IP address from IPSet
+    - name: Gather IPSet entries
+      ansible.builtin.command:
+        cmd: "firewall-cmd --ipset={{ fw_zone_ipset }} --get-entries"
+      register: fw_zone_ipset_entries_info
+
+    # Print fw_zone_info contents
+    - ansible.builtin.debug:
+        var: fw_zone_info['firewalld_info']
+    
+    # Print fw_zone_ipset_entries_info contents
+    - ansible.builtin.debug:
+        msg:
+          - "IPSet entries ({{ fw_zone_ipset }})"
+          - "{{ fw_zone_ipset_entries_info['stdout_lines'] }}"

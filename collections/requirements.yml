@@ -1,0 +1,7 @@
+---
+collections:
+  - ansible.posix
+  
+  # rhel_system_roles or linux_system_roles must be installed via dnf
+  # RHEL: sudo dnf install rhel-system-roles
+  # Fedora: sudo dnf install linux-system-roles
